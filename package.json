@@ -3,14 +3,27 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "types": "index.d.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "buildHandler": "cd handler && npm install && zip handler.zip -r *",
+    "build": "tsc"
   },
   "author": "",
   "license": "GPL-3.0",
   "dependencies": {
     "@aws-amplify/graphql-model-transformer": "^0.13.1",
     "@aws-amplify/graphql-transformer-core": "^0.16.1",
+    "@aws-cdk/aws-lambda-nodejs": "~1.124.0",
+    "@aws-cdk/core": "~1.124.0",
+    "@aws-sdk/lib-dynamodb": "^3.52.0",
     "graphql": "<15.0.0"
+  },
+  "devDependencies": {
+    "@aws-cdk/assert": "^2.13.0",
+    "@types/aws-lambda": "^8.10.92",
+    "@types/jest": "^27.4.0",
+    "jest": "^27.5.1",
+    "ts-jest": "^27.1.3"
   }
 }
