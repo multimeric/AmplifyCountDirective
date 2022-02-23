@@ -9,8 +9,11 @@
     "buildHandler": "cd handler && npm run build",
     "prepare": "tsc && npm run buildHandler"
   },
-  "author": "",
+  "author": "Michael Milton <michael.r.milton@gmail.com>",
   "license": "GPL-3.0",
+  "homepage": "https://github.com/multimeric/AmplifyCountDirective",
+  "repository": "https://github.com/multimeric/AmplifyCountDirective",
+  "bugs": "https://github.com/multimeric/AmplifyCountDirective/issues",
   "dependencies": {
     "@aws-amplify/graphql-model-transformer": "^0.13.1",
     "@aws-amplify/graphql-transformer-core": "^0.16.1",
