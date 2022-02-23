@@ -4,7 +4,7 @@ import {ScanCommandOutput} from "@aws-sdk/lib-dynamodb";
 // Refer to ../test/handler_context.json for an example
 interface CountResolverEvent {
     context: any
-    dynamo: DynamoFilter
+    dynamo: DynamoFilter | null
     tableName: string
 }
 
@@ -36,6 +36,7 @@ function primitivesToString(input: any): any {
 }
 
 export const handler = async (event: CountResolverEvent) => {
+    console.log(JSON.stringify(event));
     const dbClient = new DynamoDB({});
 
     let count = 0;
@@ -45,9 +46,9 @@ export const handler = async (event: CountResolverEvent) => {
             Select: "COUNT",
             TableName: event.tableName,
             ExclusiveStartKey: startKey,
-            FilterExpression: event.dynamo.expression,
-            ExpressionAttributeNames: event.dynamo.expressionNames,
-            ExpressionAttributeValues: primitivesToString(event.dynamo.expressionValues)
+            FilterExpression: event.dynamo?.expression,
+            ExpressionAttributeNames: event.dynamo?.expressionNames,
+            ExpressionAttributeValues: event.dynamo ? primitivesToString(event.dynamo.expressionValues) : undefined
         });
         count += res.Count || 0;
 
