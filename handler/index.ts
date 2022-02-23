@@ -32,7 +32,7 @@ function primitivesToString(input: any): any {
             return Object.fromEntries(Object.entries(input).map(([key, value]) => [key, primitivesToString(value)]))
         }
     }
-    return input.toString();
+    return String(input);
 }
 
 export const handler = async (event: CountResolverEvent) => {

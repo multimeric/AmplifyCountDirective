@@ -5,7 +5,7 @@ AmplifyCountDirective provides the ability to count the number of items in your 
 ## Example
 
 This package provides the `@count` directive which can be used to annotate your models.
-Let's say we have the following schema:
+Let's say we use it in the following schema:
 ```graphql
 type Foo @count @model {
   id: ID!
@@ -50,7 +50,7 @@ Finally you can query the number of items in your table using the same filters a
     +        "amplify-count-directive"
         ]
     }
-   ```
+    ```
 3. Add `@count` to your model:
 ```diff
 -type Foo @model {
@@ -71,6 +71,7 @@ Finally you can query the number of items in your table using the same filters a
 ### Are you sure Amplify doesn't already offer this capability?
 
 Yep. Take a look at [this long thread](https://github.com/aws-amplify/amplify-cli/issues/1865) where users complain about this fact.
+The `count` and `scannedCount` attributes returned when you `listFoo` only apply to each page of data individually, so are not helpful.
 You can use the `@searchable` directive to obtain some aggregation capabilities, but it's not cheap and the cost scales very poorly.
 
 ### How much will this add to my AWS bill?
@@ -102,6 +103,11 @@ VTL looks like a programming language, but it's really just a templating languag
 Instead you have to return a query template which will run a single API call.
 This means that it can't count the number of items in a table, because this requires multiple successive `Scan` calls to the DynamoDB table.
 This is a bit unfortunate, because VTL resolvers are much faster, but that's just the way it is.
+
+### Why didn't you nest the count resolver inside the listFoo query?
+
+If you try to access `listFoo{ count }`, it will fire off a resolver for `listFoo`, which isn't actually needed when you are counting table entries, so this would be a waste.
+This option is therefore more efficient.
 
 ### Can I help with this?
 
