@@ -6,8 +6,8 @@
   "types": "index.d.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "buildHandler": "cd handler && npm install && zip handler.zip -r *",
-    "build": "tsc"
+    "buildHandler": "cd handler && npm run build",
+    "build": "tsc && npm run buildHandler"
   },
   "author": "",
   "license": "GPL-3.0",

@@ -1,0 +1,7 @@
+type Foo @count {
+    id: ID!
+    string_field: String
+    int_field: Int
+    float_field: Float
+    bool_field: Boolean
+}

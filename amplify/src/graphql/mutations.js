@@ -1,43 +1,49 @@
 /* eslint-disable */
 // this is an auto generated file. This will be overwritten
 
-export const createTodo = /* GraphQL */ `
-  mutation CreateTodo(
-    $input: CreateTodoInput!
-    $condition: ModelTodoConditionInput
+export const createFoo = /* GraphQL */ `
+  mutation CreateFoo(
+    $input: CreateFooInput!
+    $condition: ModelFooConditionInput
   ) {
-    createTodo(input: $input, condition: $condition) {
+    createFoo(input: $input, condition: $condition) {
       id
-      name
-      description
+      string_field
+      int_field
+      float_field
+      bool_field
       createdAt
       updatedAt
     }
   }
 `;
-export const updateTodo = /* GraphQL */ `
-  mutation UpdateTodo(
-    $input: UpdateTodoInput!
-    $condition: ModelTodoConditionInput
+export const updateFoo = /* GraphQL */ `
+  mutation UpdateFoo(
+    $input: UpdateFooInput!
+    $condition: ModelFooConditionInput
   ) {
-    updateTodo(input: $input, condition: $condition) {
+    updateFoo(input: $input, condition: $condition) {
       id
-      name
-      description
+      string_field
+      int_field
+      float_field
+      bool_field
       createdAt
       updatedAt
     }
   }
 `;
-export const deleteTodo = /* GraphQL */ `
-  mutation DeleteTodo(
-    $input: DeleteTodoInput!
-    $condition: ModelTodoConditionInput
+export const deleteFoo = /* GraphQL */ `
+  mutation DeleteFoo(
+    $input: DeleteFooInput!
+    $condition: ModelFooConditionInput
   ) {
-    deleteTodo(input: $input, condition: $condition) {
+    deleteFoo(input: $input, condition: $condition) {
       id
-      name
-      description
+      string_field
+      int_field
+      float_field
+      bool_field
       createdAt
       updatedAt
     }
