@@ -54,7 +54,7 @@ Finally you can query the number of items in your table using the same filters a
 3. Add `@count` to your model:
 ```diff
 -type Foo @model {
-+type Foo @count @model {
++type Foo @model @count {
     id: ID!
     string_field: String
     int_field: Int
