@@ -1,2 +1,4 @@
-**/*.ts
-!resolver.ts
+**/*
+!index.js
+!index.d.ts
+!handler.zip

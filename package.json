@@ -5,18 +5,16 @@
   "main": "index.js",
   "types": "index.d.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest",
     "buildHandler": "cd handler && npm run build",
-    "build": "tsc && npm run buildHandler"
+    "prepare": "tsc && npm run buildHandler"
   },
   "author": "",
   "license": "GPL-3.0",
   "dependencies": {
     "@aws-amplify/graphql-model-transformer": "^0.13.1",
     "@aws-amplify/graphql-transformer-core": "^0.16.1",
-    "@aws-cdk/aws-lambda-nodejs": "~1.124.0",
     "@aws-cdk/core": "~1.124.0",
-    "@aws-sdk/lib-dynamodb": "^3.52.0",
     "graphql": "<15.0.0"
   },
   "devDependencies": {
