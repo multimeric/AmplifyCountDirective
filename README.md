@@ -109,6 +109,12 @@ This is a bit unfortunate, because VTL resolvers are much faster, but that's jus
 If you try to access `listFoo{ count }`, it will fire off a resolver for `listFoo`, which isn't actually needed when you are counting table entries, so this would be a waste.
 This option is therefore more efficient.
 
+### How can I update this package?
+
+1. Update it using `npm install -g amplify-count-directive@latest`
+2. Edit your schema by adding some whitespace somewhere. This will force Amplify to realise the API has changed.
+3. Run `amplify push` as usual
+
 ### Can I help with this?
 
 Sure! Please do. You can find the GitHub issues [here](https://github.com/multimeric/AmplifyCountDirective/issues).
