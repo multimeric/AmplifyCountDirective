@@ -60,7 +60,7 @@ export default class CountTransformer extends TransformerPluginBase implements T
 
     generateResolvers = (ctx: TransformerContextProvider) => {
         // Path on the local filesystem to the handler zip file
-        const HANDLER_LOCAL_PATH = path.join(__dirname, 'handler/handler.zip');
+        const HANDLER_LOCAL_PATH = path.join(__dirname, 'handler.zip');
         const stack: TransformerNestedStack = ctx.stackManager.createStack("countResolverStack") as TransformerNestedStack;
         const funcId = "countResolverFunc";
         const HANDLER_S3_PATH = `functions/${funcId}.zip`;
