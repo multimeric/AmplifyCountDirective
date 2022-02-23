@@ -36,7 +36,6 @@ function primitivesToString(input: any): any {
 }
 
 export const handler = async (event: CountResolverEvent) => {
-    console.log(JSON.stringify(event));
     const dbClient = new DynamoDB({});
 
     let count = 0;
