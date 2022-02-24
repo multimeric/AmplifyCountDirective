@@ -66,6 +66,21 @@ Finally you can query the number of items in your table using the same filters a
 4. Deploy your application using `amplify push`
 5. (Optional) Regenerate your JavaScript/TypeScript query templates using `amplify codegen`
 
+## How it Works
+
+AmplifyCountDirective provides a directive in exactly the same way that Amplify provides the `@model` directive.
+When Amplify finds this directive in your schema, it them does two things:
+
+* Transforms your schema to add `countFoo` to your `Query` type
+* Adds a resolver for `countFoo`, which has a Lambda data source
+
+This Lambda resolver then uses Scan with `Select: "COUNT"` to count all items in the table that match the filters you have provided.
+
+## Development
+
+* Add Jest unit tests to `test/test.ts` tests, and execute them using `npm test`
+* The `amplify` directory also includes a simple Amplify application that can be used as a test case. You can `amplify push` from this directory in order to test it out.
+
 ## FAQs
 
 ### Are you sure Amplify doesn't already offer this capability?
@@ -80,6 +95,11 @@ Ideally nothing.
 The AppSync resolvers are totally free to run, and only the Lambda function might end up costing you.
 However this package only uses the smallest size lambda, so it's realistically going to be free.
 It does however fire a few calls off to the DynamoDB table, so this might end up costing you a few cents, if you pay on demand.
+
+### What if I want to count using a secondary index?
+
+Currently AmplifyCountDirective doesn't have this capability, but it should be quite simple to implement.
+Please consider helping out with <https://github.com/multimeric/AmplifyCountDirective/issues/1>.
 
 ### Do I have to install this globally?
 
