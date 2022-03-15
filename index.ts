@@ -104,7 +104,7 @@ export default class CountTransformer extends TransformerPluginBase implements T
             }));
 
             // Connect the resolver to the API
-            const resolver = new appsync.CfnResolver(stack, `${model.name}CountResolver`, {
+            const resolver = new appsync.CfnResolver(stack, `${model.name.value}CountResolver`, {
                 apiId: ctx.api.apiId,
                 fieldName: toCamelCase(['count', model.name.value]),
                 typeName: "Query",
