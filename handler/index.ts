@@ -46,7 +46,7 @@ export function primitivesToString<T>(input: any): any {
  * Returns true if the argument is an object that has at least 1 key
  */
 export function notEmptyObject(obj: any): boolean {
-    if (typeof obj === "object"){
+    if (typeof obj === "object" && obj !== null){
         return Object.keys(obj).length > 0;
     }
     return false;
