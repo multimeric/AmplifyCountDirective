@@ -15,4 +15,3 @@ type Bar @count @model  {
   float_field: Float
   bool_field: Boolean
 }
-
