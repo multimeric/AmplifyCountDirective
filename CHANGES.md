@@ -1,6 +1,6 @@
 # 1.1.0
 
-# New Features
+## New Features
 
 * Added a debug flag that can be enabled by setting `DEBUG=handler` as an environment variable on the resolver lambda in the AWS console. This is off by default, but enabling it can aid in debugging unusual errors.
 
