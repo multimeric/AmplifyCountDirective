@@ -82,6 +82,7 @@ export default class CountTransformer extends TransformerPluginBase implements T
             undefined, // lambda timeout
             stack,
         );
+        funcRole.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'))
 
         // Make this lambda into a data source
         const dataSource = ctx.api.host.addLambdaDataSource(

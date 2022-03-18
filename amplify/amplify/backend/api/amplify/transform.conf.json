@@ -2,6 +2,6 @@
   "Version": 5,
   "ElasticsearchWarning": true,
   "transformers": [
-    "amplify-count-directive"
+    "file:///home/migwell/Programming/countDirective"
   ]
 }

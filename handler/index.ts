@@ -1,8 +1,11 @@
 import {DynamoDB} from "@aws-sdk/client-dynamodb";
-import {ScanCommandOutput} from "@aws-sdk/lib-dynamodb";
+import {ScanCommandInput, ScanCommandOutput} from "@aws-sdk/lib-dynamodb";
+import makeDebug from "debug";
+
+const debug = makeDebug("handler");
 
 // Refer to ../test/handler_context.json for an example
-interface CountResolverEvent {
+export interface CountResolverEvent {
     context: any
     dynamo: DynamoFilter | null
     tableName: string
@@ -18,13 +21,17 @@ interface Info {
     variables: any
 }
 
-interface DynamoFilter {
+export interface DynamoFilter {
     expression: string
     expressionNames: Record<string, string>
     expressionValues: Record<string, any>
 }
 
-function primitivesToString(input: any): any {
+/**
+ * Recursively converts objects to strings. If the input is a primitive, it calls String on it, otherwise
+ * it recurses over the object or array items
+ */
+export function primitivesToString<T>(input: any): any {
     if (typeof input === "object") {
         if (Array.isArray(input)) {
             return input.map(primitivesToString);
@@ -35,20 +42,37 @@ function primitivesToString(input: any): any {
     return String(input);
 }
 
+/**
+ * Returns true if the argument is an object that has at least 1 key
+ */
+export function notEmptyObject(obj: any): boolean {
+    if (typeof obj === "object"){
+        return Object.keys(obj).length > 0;
+    }
+    return false;
+}
+
+export function makeScanInput(event: CountResolverEvent, startKey: ScanCommandInput["ExclusiveStartKey"]): ScanCommandInput {
+    return {
+            Select: "COUNT",
+            TableName: event.tableName,
+            ExclusiveStartKey: startKey,
+            FilterExpression: event.dynamo && event.dynamo.expression.length > 0 ? event.dynamo?.expression : undefined,
+            ExpressionAttributeNames: notEmptyObject(event.dynamo?.expressionNames) ? event.dynamo?.expressionNames : undefined,
+            ExpressionAttributeValues: notEmptyObject(event.dynamo?.expressionValues) ? primitivesToString(event.dynamo?.expressionValues) : undefined
+        }
+}
+
 export const handler = async (event: CountResolverEvent) => {
+    debug("Incoming event data from AppSync: %o", event);
     const dbClient = new DynamoDB({});
 
     let count = 0;
     let startKey = undefined;
     while (true) {
-        const res: ScanCommandOutput = await dbClient.scan({
-            Select: "COUNT",
-            TableName: event.tableName,
-            ExclusiveStartKey: startKey,
-            FilterExpression: event.dynamo?.expression,
-            ExpressionAttributeNames: event.dynamo?.expressionNames,
-            ExpressionAttributeValues: event.dynamo ? primitivesToString(event.dynamo.expressionValues) : undefined
-        });
+        const scanArgs = makeScanInput(event, startKey);
+        debug("Executing the following Dynamo scan: %o", scanArgs);
+        const res: ScanCommandOutput = await dbClient.scan(scanArgs);
         count += res.Count || 0;
 
         // Keep looping if there is more data
