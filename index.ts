@@ -260,11 +260,7 @@ export function ensureHasCountField(
   ) as ObjectTypeDefinitionNode;
 
   if (typeObject) {
-    const updated = updateTypeWithCountField(
-      typeObject,
-      countAttributeName,
-      isNonNullType(field.type)
-    );
+    const updated = updateTypeWithCountField(typeObject, countAttributeName);
     ctx.output.putType(updated);
   }
 
@@ -277,11 +273,10 @@ export function isNonNullType(type: TypeNode): boolean {
 
 function updateTypeWithCountField(
   object: ObjectTypeDefinitionNode,
-  connectionFieldName: string,
-  nonNull: boolean = false
+  countFieldName: string
 ): ObjectTypeDefinitionNode {
   const keyFieldExists = object.fields!.some(
-    (f) => f.name.value === connectionFieldName
+    (f) => f.name.value === countFieldName
   );
 
   // If the key field already exists then do not change the input.
@@ -289,12 +284,18 @@ function updateTypeWithCountField(
     return object;
   }
 
+  const filterInputName = toPascalCase([
+    "Model",
+    countFieldName,
+    "FilterInput",
+  ]);
+
   const updatedFields = [
     ...object.fields!,
     makeField(
-      connectionFieldName,
-      [],
-      nonNull ? makeNonNullType(makeNamedType("ID")) : makeNamedType("ID"),
+      countFieldName,
+      [makeInputValueDefinition("filter", makeNamedType(filterInputName))],
+      makeNonNullType(makeNamedType("Int")),
       []
     ),
   ];
