@@ -1,4 +1,5 @@
 import {
+  DirectiveWrapper,
   TransformerNestedStack,
   TransformerPluginBase,
 } from "@aws-amplify/graphql-transformer-core";
@@ -8,6 +9,20 @@ import {
   TransformerSchemaVisitStepContextProvider,
   TransformerTransformSchemaStepContextProvider,
 } from "@aws-amplify/graphql-transformer-interfaces";
+import * as appsync from "@aws-cdk/aws-appsync";
+import * as iam from "@aws-cdk/aws-iam";
+import * as lambda from "@aws-cdk/aws-lambda";
+import {
+  DirectiveNode,
+  FieldDefinitionNode,
+  InterfaceTypeDefinitionNode,
+  Kind,
+  ListTypeNode,
+  NamedTypeNode,
+  NonNullTypeNode,
+  ObjectTypeDefinitionNode,
+  TypeNode,
+} from "graphql";
 import {
   makeField,
   makeInputValueDefinition,
@@ -15,26 +30,69 @@ import {
   toCamelCase,
   toPascalCase,
 } from "graphql-transformer-common";
-import {
-  DirectiveNode,
-  FieldDefinitionNode,
-  ObjectTypeDefinitionNode,
-} from "graphql";
-import * as lambda from "@aws-cdk/aws-lambda";
 import * as path from "path";
-import * as appsync from "@aws-cdk/aws-appsync";
-import * as iam from "@aws-cdk/aws-iam";
+
+export function getCountAttributeName(type: string, field: string) {
+  return toCamelCase([type, field, "id"]);
+}
+
+export type FieldCountDirectiveConfiguration = {
+  directiveName: string;
+  object: ObjectTypeDefinitionNode;
+  field: FieldDefinitionNode;
+  directive: DirectiveNode;
+  fields: string[];
+  fieldNodes: FieldDefinitionNode[];
+  relatedType: ObjectTypeDefinitionNode;
+  relatedTypeIndex: FieldDefinitionNode[];
+  countFields: string[];
+};
+
+const directiveName = "fieldCount";
 
 export default class CountTransformer
   extends TransformerPluginBase
   implements TransformerPluginProvider
 {
   models: ObjectTypeDefinitionNode[];
+  fields: FieldCountDirectiveConfiguration[];
+
+  // directive @fieldCount(type: CountType!) on
 
   constructor() {
-    super("count", "directive @count on OBJECT");
+    super(
+      "count",
+      `
+    directive @count(type: CountType!) on OBJECT
+    directive @${directiveName}(type: CountType!, fields: [String!]) on FIELD_DEFINITION
+    enum CountType {
+      scan
+      distinct
+    }
+`
+    );
     this.models = [];
+    this.fields = [];
   }
+
+  field = (
+    parent: ObjectTypeDefinitionNode | InterfaceTypeDefinitionNode,
+    field: FieldDefinitionNode,
+    directive: DirectiveNode,
+    context: TransformerSchemaVisitStepContextProvider
+  ) => {
+    const directiveWrapped = new DirectiveWrapper(directive);
+    const args = directiveWrapped.getArguments({
+      directiveName,
+      object: parent as ObjectTypeDefinitionNode,
+      field: field,
+      directive,
+    }) as FieldCountDirectiveConfiguration;
+
+    /// Keep track of all fields annotated with @count
+    validate(args, context as TransformerContextProvider);
+    this.fields.push(args);
+  };
 
   object = (
     definition: ObjectTypeDefinitionNode,
@@ -46,7 +104,14 @@ export default class CountTransformer
   };
 
   transformSchema = (ctx: TransformerTransformSchemaStepContextProvider) => {
+    const context = ctx as TransformerContextProvider;
+
     const fields: FieldDefinitionNode[] = [];
+
+    // For each field that has been annotated with @count
+    for (const config of this.fields) {
+      ensureHasCountField(config, context);
+    }
 
     // For each model that has been annotated with @count
     for (const model of this.models) {
@@ -172,4 +237,222 @@ $util.toJson({
       ctx.api.addSchemaDependency(resolver);
     }
   };
+}
+
+export function ensureHasCountField(
+  config: FieldCountDirectiveConfiguration,
+  ctx: TransformerContextProvider
+) {
+  const { field, fieldNodes, object } = config;
+
+  // If fields were explicitly provided to the directive, there is nothing else to do here.
+  if (fieldNodes.length > 0) {
+    return;
+  }
+
+  const countAttributeName = getCountAttributeName(
+    object.name.value,
+    field.name.value
+  );
+
+  const typeObject = ctx.output.getType(
+    object.name.value
+  ) as ObjectTypeDefinitionNode;
+
+  if (typeObject) {
+    const updated = updateTypeWithCountField(
+      typeObject,
+      countAttributeName,
+      isNonNullType(field.type)
+    );
+    ctx.output.putType(updated);
+  }
+
+  config.countFields.push(countAttributeName);
+}
+
+export function isNonNullType(type: TypeNode): boolean {
+  return type.kind === Kind.NON_NULL_TYPE;
+}
+
+function updateTypeWithCountField(
+  object: ObjectTypeDefinitionNode,
+  connectionFieldName: string,
+  nonNull: boolean = false
+): ObjectTypeDefinitionNode {
+  const keyFieldExists = object.fields!.some(
+    (f) => f.name.value === connectionFieldName
+  );
+
+  // If the key field already exists then do not change the input.
+  if (keyFieldExists) {
+    return object;
+  }
+
+  const updatedFields = [
+    ...object.fields!,
+    makeField(
+      connectionFieldName,
+      [],
+      nonNull ? makeNonNullType(makeNamedType("ID")) : makeNamedType("ID"),
+      []
+    ),
+  ];
+
+  return {
+    ...object,
+    fields: updatedFields,
+  };
+}
+
+export function makeNonNullType(
+  type: NamedTypeNode | ListTypeNode
+): NonNullTypeNode {
+  return {
+    kind: Kind.NON_NULL_TYPE,
+    type,
+  };
+}
+
+type ScalarMap = {
+  [k: string]: "String" | "Int" | "Float" | "Boolean" | "ID";
+};
+
+export const STANDARD_SCALARS: ScalarMap = {
+  String: "String",
+  Int: "Int",
+  Float: "Float",
+  Boolean: "Boolean",
+  ID: "ID",
+};
+
+const OTHER_SCALARS: ScalarMap = {
+  BigInt: "Int",
+  Double: "Float",
+};
+
+export const APPSYNC_DEFINED_SCALARS: ScalarMap = {
+  AWSDate: "String",
+  AWSTime: "String",
+  AWSDateTime: "String",
+  AWSTimestamp: "Int",
+  AWSEmail: "String",
+  AWSJSON: "String",
+  AWSURL: "String",
+  AWSPhone: "String",
+  AWSIPAddress: "String",
+};
+
+export const DEFAULT_SCALARS: ScalarMap = {
+  ...STANDARD_SCALARS,
+  ...OTHER_SCALARS,
+  ...APPSYNC_DEFINED_SCALARS,
+};
+
+function validate(
+  config: FieldCountDirectiveConfiguration,
+  ctx: TransformerContextProvider
+): void {
+  const { field } = config;
+
+  ensureFieldsArray(config);
+  validateModelDirective(config);
+  validateIndexDirective(config);
+
+  if (!isListType(field.type)) {
+    throw new Error(`@${directiveName} cannot be used on non-lists.`);
+  }
+
+  config.fieldNodes = getFieldsNodes(config, ctx);
+  config.countFields = [];
+}
+
+export function ensureFieldsArray(config: FieldCountDirectiveConfiguration) {
+  if (!config.fields) {
+    config.fields = [];
+  } else if (!Array.isArray(config.fields)) {
+    config.fields = [config.fields];
+  } else if (config.fields.length === 0) {
+    throw new Error(`No fields passed to @${config.directiveName} directive.`);
+  }
+}
+
+export function getBaseType(type: TypeNode): string {
+  if (type.kind === Kind.NON_NULL_TYPE) {
+    return getBaseType(type.type);
+  } else if (type.kind === Kind.LIST_TYPE) {
+    return getBaseType(type.type);
+  } else {
+    return type.name.value;
+  }
+}
+
+export function validateIndexDirective(
+  config: FieldCountDirectiveConfiguration
+) {
+  if (!config.field.directives?.find((dir) => dir.name.value === "index")) {
+    throw new Error(
+      `Any field annotated with @${config.directiveName} must also be annoted with @index, as it uses the indexes for count.`
+    );
+  }
+
+  if (!getModelDirective(config.object)) {
+    throw new Error(
+      `@${config.directiveName} must be on an @model object type field.`
+    );
+  }
+}
+
+export function validateModelDirective(
+  config: FieldCountDirectiveConfiguration
+) {
+  if (!getModelDirective(config.object)) {
+    throw new Error(
+      `@${config.directiveName} must be on an @model object type field.`
+    );
+  }
+}
+
+export function getModelDirective(objectType: ObjectTypeDefinitionNode) {
+  return objectType.directives!.find((directive) => {
+    return directive.name.value === "model";
+  });
+}
+
+export function isListType(type: TypeNode): boolean {
+  if (type.kind === Kind.NON_NULL_TYPE) {
+    return isListType(type.type);
+  } else if (type.kind === Kind.LIST_TYPE) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+export function getFieldsNodes(
+  config: FieldCountDirectiveConfiguration,
+  ctx: TransformerContextProvider
+) {
+  const { directiveName, fields, object } = config;
+  // const enums = ctx.output.getTypeDefinitionsOfKind(
+  //   Kind.ENUM_TYPE_DEFINITION
+  // ) as EnumTypeDefinitionNode[];
+
+  return fields.map((fieldName) => {
+    const fieldNode = object.fields!.find(
+      (field) => field.name.value === fieldName
+    );
+
+    if (!fieldNode) {
+      throw new Error(`${fieldName} is not a field in ${object.name.value}`);
+    }
+
+    // if (fieldNode.type) {
+    //   throw new Error(
+    //     `All fields provided to @${directiveName} must be scalar or enum fields.`
+    //   );
+    // }
+
+    return fieldNode;
+  });
 }
