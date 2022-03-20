@@ -518,9 +518,12 @@ export function getBaseType(type: TypeNode): string {
 export function validateIndexDirective(
   config: FieldCountDirectiveConfiguration
 ) {
-  if (!config.field.directives?.find((dir) => dir.name.value === "index")) {
+  if (
+    !config.field.directives?.find((dir) => dir.name.value === "hasMany") ||
+    !config.field.directives?.find((dir) => dir.name.value === "manyToMany")
+  ) {
     throw new Error(
-      `Any field annotated with @${config.directiveName} must also be annoted with @index, as it uses the indexes for count.`
+      `Any field annotated with @${config.directiveName} must also be annoted with @hasMany or @manyToMany, as it uses their connecting tables for count.`
     );
   }
 
