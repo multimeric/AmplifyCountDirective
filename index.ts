@@ -1,5 +1,8 @@
 import {
   DirectiveWrapper,
+  IAM_AUTH_ROLE_PARAMETER,
+  IAM_UNAUTH_ROLE_PARAMETER,
+  MappingTemplate,
   TransformerNestedStack,
   TransformerPluginBase,
 } from "@aws-amplify/graphql-transformer-core";
@@ -10,8 +13,10 @@ import {
   TransformerTransformSchemaStepContextProvider,
 } from "@aws-amplify/graphql-transformer-interfaces";
 import * as appsync from "@aws-cdk/aws-appsync";
+import { AuthorizationType } from "@aws-cdk/aws-appsync";
 import * as iam from "@aws-cdk/aws-iam";
 import * as lambda from "@aws-cdk/aws-lambda";
+import * as cdk from "@aws-cdk/core";
 import {
   DirectiveNode,
   FieldDefinitionNode,
@@ -21,12 +26,21 @@ import {
   NamedTypeNode,
   NonNullTypeNode,
   ObjectTypeDefinitionNode,
+  StringValueNode,
   TypeNode,
 } from "graphql";
+import {
+  compoundExpression,
+  Expression,
+  obj,
+  printBlock,
+  qref,
+} from "graphql-mapping-template";
 import {
   makeField,
   makeInputValueDefinition,
   makeNamedType,
+  ResolverResourceIDs,
   toCamelCase,
   toPascalCase,
 } from "graphql-transformer-common";
@@ -43,8 +57,8 @@ export type FieldCountDirectiveConfiguration = {
   directive: DirectiveNode;
   fields: string[];
   fieldNodes: FieldDefinitionNode[];
-  relatedType: ObjectTypeDefinitionNode;
-  relatedTypeIndex: FieldDefinitionNode[];
+  resolverTypeName: ObjectTypeDefinitionNode;
+  resolverFieldName: string;
   countFields: string[];
 };
 
@@ -86,6 +100,8 @@ export default class CountTransformer
       directiveName,
       object: parent as ObjectTypeDefinitionNode,
       field: field,
+      resolverTypeName: parent,
+      resolverFieldName: field.name.value,
       directive,
     }) as FieldCountDirectiveConfiguration;
 
@@ -144,6 +160,8 @@ export default class CountTransformer
   };
 
   generateResolvers = (ctx: TransformerContextProvider) => {
+    const createdResources = new Map<string, any>();
+
     // Path on the local filesystem to the handler zip file
     const HANDLER_LOCAL_PATH = path.join(__dirname, "handler.zip");
     const stack: TransformerNestedStack = ctx.stackManager.createStack(
@@ -182,6 +200,107 @@ export default class CountTransformer
       {},
       stack
     );
+
+    for (const config of this.fields) {
+      const {
+        countFields,
+        field,
+        fields,
+        object,
+        resolverTypeName,
+        resolverFieldName,
+      } = config;
+
+      const localFields = fields.length > 0 ? fields : countFields;
+
+      // Find the table we want to scan
+      const tableDataSource = ctx.dataSources.get(
+        resolverTypeName
+      ) as appsync.DynamoDbDataSource;
+      const table = tableDataSource.ds
+        .dynamoDbConfig as appsync.CfnDataSource.DynamoDBConfigProperty;
+
+      const dataSource = ctx.api.host.getDataSource(
+        `${resolverTypeName.name.value}Table`
+      );
+
+      // Allow the lambda to access this table
+      funcRole.addToPolicy(
+        new iam.PolicyStatement({
+          actions: ["dynamodb:Scan"],
+          effect: iam.Effect.ALLOW,
+          resources: [
+            `arn:aws:dynamodb:${table.awsRegion}:${stack.account}:table/${table.tableName}`,
+          ],
+        })
+      );
+
+      // Create the GraphQL resolvers.
+      const resolverId = ResolverResourceIDs.ResolverResourceID(
+        config.resolverTypeName.name.value,
+        config.resolverFieldName
+      );
+      let resolver = createdResources.get(resolverId);
+
+      const requestTemplate: Array<Expression> = [
+        qref(`$ctx.stash.put("typeName", "${config.resolverTypeName}")`),
+        qref(`$ctx.stash.put("fieldName", "${config.resolverFieldName}")`),
+      ];
+
+      const authModes = [
+        ctx.authConfig.defaultAuthentication,
+        ...(ctx.authConfig.additionalAuthenticationProviders || []),
+      ].map((mode) => mode?.authenticationType);
+      if (authModes.includes(AuthorizationType.IAM)) {
+        const authRoleParameter = (
+          ctx.stackManager.getParameter(
+            IAM_AUTH_ROLE_PARAMETER
+          ) as cdk.CfnParameter
+        ).valueAsString;
+        const unauthRoleParameter = (
+          ctx.stackManager.getParameter(
+            IAM_UNAUTH_ROLE_PARAMETER
+          ) as cdk.CfnParameter
+        ).valueAsString;
+        requestTemplate.push(
+          qref(
+            `$ctx.stash.put("authRole", "arn:aws:sts::${
+              cdk.Stack.of(ctx.stackManager.rootStack).account
+            }:assumed-role/${authRoleParameter}/CognitoIdentityCredentials")`
+          ),
+          qref(
+            `$ctx.stash.put("unauthRole", "arn:aws:sts::${
+              cdk.Stack.of(ctx.stackManager.rootStack).account
+            }:assumed-role/${unauthRoleParameter}/CognitoIdentityCredentials")`
+          )
+        );
+      }
+      requestTemplate.push(obj({}));
+
+      if (resolver === undefined) {
+        // TODO: update function to use resolver manager
+        resolver = ctx.api.host.addResolver(
+          config.resolverTypeName.name.value,
+          config.resolverFieldName,
+          MappingTemplate.inlineTemplateFromString(
+            printBlock("Stash resolver specific context.")(
+              compoundExpression(requestTemplate)
+            )
+          ),
+          MappingTemplate.s3MappingTemplateFromString(
+            "$util.toJson($ctx.prev.result)",
+            `${config.resolverTypeName}.${config.resolverFieldName}.res.vtl`
+          ),
+          undefined,
+          undefined,
+          [],
+          stack
+        );
+        createdResources.set(resolverId, resolver);
+      }
+
+      resolver.pipelineConfig.functions.push(func);
+    }
 
     for (const model of this.models) {
       // Find the table we want to scan
@@ -237,6 +356,14 @@ $util.toJson({
       ctx.api.addSchemaDependency(resolver);
     }
   };
+}
+
+function getIndexName(directive: DirectiveNode): string | undefined {
+  for (const argument of directive.arguments!) {
+    if (argument.name.value === "name") {
+      return (argument.value as StringValueNode).value;
+    }
+  }
 }
 
 export function ensureHasCountField(
