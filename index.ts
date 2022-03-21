@@ -48,6 +48,7 @@ export interface FieldCountDirectiveConfiguration {
   countNode: FieldDefinitionNode;
   resolverTypeName: string;
   resolverFieldName: string;
+  indexName: string;
 }
 
 const directiveName = "fieldCount";
@@ -64,7 +65,7 @@ export default class CountTransformer
       "count",
       `
     directive @count(type: CountType) on OBJECT
-    directive @${directiveName}(type: CountType, countField: String) on FIELD_DEFINITION
+    directive @${directiveName}(type: CountType, countField: String, indexName: String!) on FIELD_DEFINITION
     enum CountType {
       scan
       distinct
@@ -195,6 +196,7 @@ export default class CountTransformer
         resolverTypeName,
         resolverFieldName,
         countObject,
+        indexName,
       } = config;
 
       // Find the table we want to scan
@@ -239,7 +241,8 @@ $util.toJson({
   "payload": {
       "context": $ctx,
       "dynamo": $util.parseJson($util.transform.toDynamoDBFilterExpression($ctx.arguments.filter)),
-      "tableName": "${table.tableName}"
+      "tableName": "${table.tableName}",
+      "index": ${indexName}
   }
 })
                 `,

@@ -9,6 +9,7 @@ export interface CountResolverEvent {
   context: any;
   dynamo: DynamoFilter | null;
   tableName: string;
+  indexName: string | undefined | null;
 }
 
 interface Context {
@@ -78,14 +79,44 @@ export function makeScanInput(
   };
 }
 
+export function makeScanInputFromIndex(
+  event: CountResolverEvent,
+  startKey: ScanCommandInput["ExclusiveStartKey"]
+): ScanCommandInput {
+  return {
+    Select: "COUNT",
+    TableName: event.tableName,
+    ExclusiveStartKey: startKey,
+    FilterExpression:
+      event.dynamo && event.dynamo.expression.length > 0
+        ? event.dynamo?.expression
+        : undefined,
+    ExpressionAttributeNames: notEmptyObject(event.dynamo?.expressionNames)
+      ? event.dynamo?.expressionNames
+      : undefined,
+    ExpressionAttributeValues: notEmptyObject(event.dynamo?.expressionValues)
+      ? primitivesToString(event.dynamo?.expressionValues)
+      : undefined,
+  };
+}
+
 export const handler = async (event: CountResolverEvent) => {
   debug("Incoming event data from AppSync: %o", event);
   const dbClient = new DynamoDB({});
 
+  const indexName = event.indexName;
+
   let count = 0;
   let startKey = undefined;
   while (true) {
-    const scanArgs = makeScanInput(event, startKey);
+    let scanArgs!: ScanCommandInput;
+
+    if (!indexName) {
+      scanArgs = makeScanInputFromIndex(event, startKey);
+    } else {
+      scanArgs = makeScanInput(event, startKey);
+    }
+
     debug("Executing the following Dynamo scan: %o", scanArgs);
     const res: ScanCommandOutput = await dbClient.scan(scanArgs);
     count += res.Count || 0;
