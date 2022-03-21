@@ -1,21 +1,21 @@
-import CountTransformer from "../index";
+import { ModelTransformer } from "@aws-amplify/graphql-model-transformer";
 import {
   GraphQLTransform,
   validateModelSchema,
 } from "@aws-amplify/graphql-transformer-core";
-import * as fs from "fs";
-import * as path from "path";
-import { parse } from "graphql";
-import { countResources, expect as cdkExpect } from "@aws-cdk/assert";
-import { ModelTransformer } from "@aws-amplify/graphql-model-transformer";
 import Template from "@aws-amplify/graphql-transformer-core/lib/transformation/types";
+import { countResources, expect as cdkExpect } from "@aws-cdk/assert";
+import * as fs from "fs";
+import { parse } from "graphql";
+import * as path from "path";
 import {
-  makeScanInput,
-  primitivesToString,
-  notEmptyObject,
   CountResolverEvent,
   DynamoFilter,
+  makeScanInput,
+  notEmptyObject,
+  primitivesToString,
 } from "../handler";
+import CountTransformer from "../index";
 
 const test_schema = fs.readFileSync(
   path.resolve(__dirname, "./test_schema.graphql"),
@@ -51,6 +51,25 @@ type Bar @count @model {
     bool_field: Boolean
 }
 `;
+
+const connectionSchema = `
+type Foo @count @model {
+    id: ID!
+    string_field: String
+    int_field: Int
+    float_field: Float
+    bool_field: Boolean
+}
+
+type Bar @count @model {
+    id: ID!
+    string_field: String
+    int_field: Int
+    float_field: Float
+    bool_field: Boolean
+    foos_count: Int
+    foos: [Foo] @count(field: "foos_count") @hasMany
+}`;
 
 const makeTransformer = () =>
   new GraphQLTransform({

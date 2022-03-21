@@ -63,8 +63,8 @@ export default class CountTransformer
     super(
       "count",
       `
-    directive @count(type: CountType!) on OBJECT
-    directive @${directiveName}(type: CountType!, countField: String) on FIELD_DEFINITION
+    directive @count(type: CountType) on OBJECT
+    directive @${directiveName}(type: CountType, countField: String) on FIELD_DEFINITION
     enum CountType {
       scan
       distinct
