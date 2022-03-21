@@ -77,6 +77,48 @@ const makeTransformer = () =>
   });
 
 describe("cdk stack", () => {
+  test("field transformer fails when @model is not used on parent", () => {
+    const transformer = makeTransformer();
+    expect(() => {
+      transformer.transform(`
+type Foo @count @model {
+    id: ID!
+    string_field: String
+    int_field: Int
+    float_field: Float
+    bool_field: Boolean
+}
+
+type Bar @count {
+    id: ID!
+    string_field: String
+    int_field: Int
+    float_field: Float
+    bool_field: Boolean
+    foos_count: Int
+    foos: [Foo] @count(field: "foos_count") @hasMany
+}
+        `);
+    }).toThrow(/model/);
+  });
+
+  test("field transformer fails when @hasMany or @manyToMany is not used on field", () => {
+    const transformer = makeTransformer();
+    expect(() => {
+      transformer.transform(`
+type Bar @count {
+    id: ID!
+    string_field: String
+    int_field: Int
+    float_field: Float
+    bool_field: Boolean
+    foos_count: Int
+    foos: [Foo] @count(field: "foos_count")
+}
+        `);
+    }).toThrow(/model/);
+  });
+
   test("transformer fails when @model is not used", () => {
     const transformer = makeTransformer();
     expect(() => {
