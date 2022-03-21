@@ -1,21 +1,21 @@
-import CountTransformer from "../index";
+import { ModelTransformer } from "@aws-amplify/graphql-model-transformer";
 import {
   GraphQLTransform,
   validateModelSchema,
 } from "@aws-amplify/graphql-transformer-core";
-import * as fs from "fs";
-import * as path from "path";
-import { parse } from "graphql";
-import { countResources, expect as cdkExpect } from "@aws-cdk/assert";
-import { ModelTransformer } from "@aws-amplify/graphql-model-transformer";
 import Template from "@aws-amplify/graphql-transformer-core/lib/transformation/types";
+import { countResources, expect as cdkExpect } from "@aws-cdk/assert";
+import * as fs from "fs";
+import { parse } from "graphql";
+import * as path from "path";
 import {
-  makeScanInput,
-  primitivesToString,
-  notEmptyObject,
   CountResolverEvent,
   DynamoFilter,
+  makeScanInput,
+  notEmptyObject,
+  primitivesToString,
 } from "../handler";
+import CountTransformer from "../index";
 
 const test_schema = fs.readFileSync(
   path.resolve(__dirname, "./test_schema.graphql"),
@@ -52,12 +52,84 @@ type Bar @count @model {
 }
 `;
 
+const connectionSchema = `
+type Foo @count @model {
+    id: ID!
+    string_field: String
+    int_field: Int
+    float_field: Float
+    bool_field: Boolean
+    bar_id: ID @index(name: "byBar")
+}
+
+type Bar @count @model {
+    id: ID!
+    string_field: String
+    int_field: Int
+    float_field: Float
+    bool_field: Boolean
+    foos_count: Int
+    foos: [Foo] @count(field: "foos_count", indexName: "byBar") @hasMany(indexName: "byBar", fields: ["id"])
+}`;
+
 const makeTransformer = () =>
   new GraphQLTransform({
     transformers: [new CountTransformer(), new ModelTransformer()],
   });
 
 describe("cdk stack", () => {
+  test("field transformer fails when @model is not used on parent", () => {
+    const transformer = makeTransformer();
+    expect(() => {
+      transformer.transform(`
+type Foo @count @model {
+    id: ID!
+    string_field: String
+    int_field: Int
+    float_field: Float
+    bool_field: Boolean
+    bar_id: ID @index(name: "byBar")
+}
+
+type Bar @count {
+    id: ID!
+    string_field: String
+    int_field: Int
+    float_field: Float
+    bool_field: Boolean
+    foos_count: Int
+    foos: [Foo] @count(field: "foos_count", indexName: "byBar") @hasMany(indexName: "byBar", fields: ["id"])
+}
+        `);
+    }).toThrow(/model/);
+  });
+
+  test("field transformer fails when @hasMany or @manyToMany is not used on field", () => {
+    const transformer = makeTransformer();
+    expect(() => {
+      transformer.transform(`
+type Foo @count @model {
+    id: ID!
+    string_field: String
+    int_field: Int
+    float_field: Float
+    bool_field: Boolean
+    bar_id: ID @index(name: "byBar")
+}
+
+type Bar @count {
+    id: ID!
+    string_field: String
+    int_field: Int
+    float_field: Float
+    bool_field: Boolean
+    foos_count: Int
+    foos: [Foo] @count(field: "foos_count", indexName: "byBar")
+}
+        `);
+    }).toThrow(/model/);
+  });
+
   test("transformer fails when @model is not used", () => {
     const transformer = makeTransformer();
     expect(() => {
@@ -120,6 +192,31 @@ function makeAppSyncEvent(dynamoFilter: DynamoFilter): CountResolverEvent {
     },
     dynamo: dynamoFilter,
     tableName: "Foo-k36yt433bvewbbo5436kmt4ixa-countdev",
+    indexName: undefined,
+  };
+}
+
+function makeAppSyncEventWithIndex(
+  dynamoFilter: DynamoFilter
+): CountResolverEvent {
+  return {
+    context: {
+      arguments: {
+        filter: {},
+      },
+      identity: null,
+      source: null,
+      result: null,
+      request: { headers: [], domainName: null },
+      info: { fieldName: "countFoo", parentTypeName: "Query", variables: {} },
+      error: null,
+      prev: null,
+      stash: {},
+      outErrors: [],
+    },
+    dynamo: dynamoFilter,
+    tableName: "Foo-k36yt433bvewbbo5436kmt4ixa-countdev",
+    indexName: undefined,
   };
 }
 
