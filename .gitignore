@@ -2,6 +2,7 @@
 *.d.ts
 handler/node_modules
 handler/*.js
+handler.zip
 handler/*.d.ts
 .idea
 node_modules

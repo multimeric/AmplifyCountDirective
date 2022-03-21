@@ -26,7 +26,6 @@ import {
   NamedTypeNode,
   NonNullTypeNode,
   ObjectTypeDefinitionNode,
-  StringValueNode,
   TypeNode,
 } from "graphql";
 import {
@@ -37,6 +36,7 @@ import {
   qref,
 } from "graphql-mapping-template";
 import {
+  getBaseType,
   makeField,
   makeInputValueDefinition,
   makeNamedType,
@@ -50,17 +50,17 @@ export function getCountAttributeName(type: string, field: string) {
   return toCamelCase([type, field, "id"]);
 }
 
-export type FieldCountDirectiveConfiguration = {
+export interface FieldCountDirectiveConfiguration {
   directiveName: string;
   object: ObjectTypeDefinitionNode;
   field: FieldDefinitionNode;
   directive: DirectiveNode;
-  fields: string[];
-  fieldNodes: FieldDefinitionNode[];
-  resolverTypeName: ObjectTypeDefinitionNode;
+  countObject: ObjectTypeDefinitionNode;
+  countField: string;
+  countNode: FieldDefinitionNode;
+  resolverTypeName: string;
   resolverFieldName: string;
-  countFields: string[];
-};
+}
 
 const directiveName = "fieldCount";
 
@@ -71,14 +71,12 @@ export default class CountTransformer
   models: ObjectTypeDefinitionNode[];
   fields: FieldCountDirectiveConfiguration[];
 
-  // directive @fieldCount(type: CountType!) on
-
   constructor() {
     super(
       "count",
       `
     directive @count(type: CountType!) on OBJECT
-    directive @${directiveName}(type: CountType!, fields: [String!]) on FIELD_DEFINITION
+    directive @${directiveName}(type: CountType!, countField: String) on FIELD_DEFINITION
     enum CountType {
       scan
       distinct
@@ -100,7 +98,7 @@ export default class CountTransformer
       directiveName,
       object: parent as ObjectTypeDefinitionNode,
       field: field,
-      resolverTypeName: parent,
+      resolverTypeName: parent.name.value,
       resolverFieldName: field.name.value,
       directive,
     }) as FieldCountDirectiveConfiguration;
@@ -203,25 +201,23 @@ export default class CountTransformer
 
     for (const config of this.fields) {
       const {
-        countFields,
         field,
-        fields,
+        countField,
         object,
         resolverTypeName,
         resolverFieldName,
+        countObject,
       } = config;
-
-      const localFields = fields.length > 0 ? fields : countFields;
 
       // Find the table we want to scan
       const tableDataSource = ctx.dataSources.get(
-        resolverTypeName
+        countObject
       ) as appsync.DynamoDbDataSource;
       const table = tableDataSource.ds
         .dynamoDbConfig as appsync.CfnDataSource.DynamoDBConfigProperty;
 
       const dataSource = ctx.api.host.getDataSource(
-        `${resolverTypeName.name.value}Table`
+        `${countObject.name.value}Table`
       );
 
       // Allow the lambda to access this table
@@ -237,14 +233,14 @@ export default class CountTransformer
 
       // Create the GraphQL resolvers.
       const resolverId = ResolverResourceIDs.ResolverResourceID(
-        config.resolverTypeName.name.value,
-        config.resolverFieldName
+        config.resolverTypeName,
+        config.countField
       );
       let resolver = createdResources.get(resolverId);
 
       const requestTemplate: Array<Expression> = [
         qref(`$ctx.stash.put("typeName", "${config.resolverTypeName}")`),
-        qref(`$ctx.stash.put("fieldName", "${config.resolverFieldName}")`),
+        qref(`$ctx.stash.put("fieldName", "${config.countField}")`),
       ];
 
       const authModes = [
@@ -280,8 +276,8 @@ export default class CountTransformer
       if (resolver === undefined) {
         // TODO: update function to use resolver manager
         resolver = ctx.api.host.addResolver(
-          config.resolverTypeName.name.value,
-          config.resolverFieldName,
+          config.resolverTypeName,
+          config.countField,
           MappingTemplate.inlineTemplateFromString(
             printBlock("Stash resolver specific context.")(
               compoundExpression(requestTemplate)
@@ -289,7 +285,7 @@ export default class CountTransformer
           ),
           MappingTemplate.s3MappingTemplateFromString(
             "$util.toJson($ctx.prev.result)",
-            `${config.resolverTypeName}.${config.resolverFieldName}.res.vtl`
+            `${config.resolverTypeName}.${config.countField}.res.vtl`
           ),
           undefined,
           undefined,
@@ -358,22 +354,14 @@ $util.toJson({
   };
 }
 
-function getIndexName(directive: DirectiveNode): string | undefined {
-  for (const argument of directive.arguments!) {
-    if (argument.name.value === "name") {
-      return (argument.value as StringValueNode).value;
-    }
-  }
-}
-
 export function ensureHasCountField(
   config: FieldCountDirectiveConfiguration,
   ctx: TransformerContextProvider
 ) {
-  const { field, fieldNodes, object } = config;
+  const { field, countNode, object } = config;
 
   // If fields were explicitly provided to the directive, there is nothing else to do here.
-  if (fieldNodes.length > 0) {
+  if (countNode) {
     return;
   }
 
@@ -391,7 +379,7 @@ export function ensureHasCountField(
     ctx.output.putType(updated);
   }
 
-  config.countFields.push(countAttributeName);
+  config.countField = countAttributeName;
 }
 
 export function isNonNullType(type: TypeNode): boolean {
@@ -411,12 +399,14 @@ function updateTypeWithCountField(
     return object;
   }
 
+  // Create a name for the filter key
   const filterInputName = toPascalCase([
     "Model",
     countFieldName,
     "FilterInput",
   ]);
 
+  // Add the new field to the original model
   const updatedFields = [
     ...object.fields!,
     makeField(
@@ -442,77 +432,20 @@ export function makeNonNullType(
   };
 }
 
-type ScalarMap = {
-  [k: string]: "String" | "Int" | "Float" | "Boolean" | "ID";
-};
-
-export const STANDARD_SCALARS: ScalarMap = {
-  String: "String",
-  Int: "Int",
-  Float: "Float",
-  Boolean: "Boolean",
-  ID: "ID",
-};
-
-const OTHER_SCALARS: ScalarMap = {
-  BigInt: "Int",
-  Double: "Float",
-};
-
-export const APPSYNC_DEFINED_SCALARS: ScalarMap = {
-  AWSDate: "String",
-  AWSTime: "String",
-  AWSDateTime: "String",
-  AWSTimestamp: "Int",
-  AWSEmail: "String",
-  AWSJSON: "String",
-  AWSURL: "String",
-  AWSPhone: "String",
-  AWSIPAddress: "String",
-};
-
-export const DEFAULT_SCALARS: ScalarMap = {
-  ...STANDARD_SCALARS,
-  ...OTHER_SCALARS,
-  ...APPSYNC_DEFINED_SCALARS,
-};
-
 function validate(
   config: FieldCountDirectiveConfiguration,
   ctx: TransformerContextProvider
 ): void {
   const { field } = config;
 
-  ensureFieldsArray(config);
-  validateModelDirective(config);
   validateIndexDirective(config);
 
   if (!isListType(field.type)) {
     throw new Error(`@${directiveName} cannot be used on non-lists.`);
   }
 
-  config.fieldNodes = getFieldsNodes(config, ctx);
-  config.countFields = [];
-}
-
-export function ensureFieldsArray(config: FieldCountDirectiveConfiguration) {
-  if (!config.fields) {
-    config.fields = [];
-  } else if (!Array.isArray(config.fields)) {
-    config.fields = [config.fields];
-  } else if (config.fields.length === 0) {
-    throw new Error(`No fields passed to @${config.directiveName} directive.`);
-  }
-}
-
-export function getBaseType(type: TypeNode): string {
-  if (type.kind === Kind.NON_NULL_TYPE) {
-    return getBaseType(type.type);
-  } else if (type.kind === Kind.LIST_TYPE) {
-    return getBaseType(type.type);
-  } else {
-    return type.name.value;
-  }
+  config.countNode = getCountNode(config, ctx);
+  config.countObject = getCountTableType(config, ctx);
 }
 
 export function validateIndexDirective(
@@ -533,17 +466,6 @@ export function validateIndexDirective(
     );
   }
 }
-
-export function validateModelDirective(
-  config: FieldCountDirectiveConfiguration
-) {
-  if (!getModelDirective(config.object)) {
-    throw new Error(
-      `@${config.directiveName} must be on an @model object type field.`
-    );
-  }
-}
-
 export function getModelDirective(objectType: ObjectTypeDefinitionNode) {
   return objectType.directives!.find((directive) => {
     return directive.name.value === "model";
@@ -560,30 +482,38 @@ export function isListType(type: TypeNode): boolean {
   }
 }
 
-export function getFieldsNodes(
+export function getCountNode(
   config: FieldCountDirectiveConfiguration,
   ctx: TransformerContextProvider
 ) {
-  const { directiveName, fields, object } = config;
-  // const enums = ctx.output.getTypeDefinitionsOfKind(
-  //   Kind.ENUM_TYPE_DEFINITION
-  // ) as EnumTypeDefinitionNode[];
+  const { countField, object } = config;
 
-  return fields.map((fieldName) => {
-    const fieldNode = object.fields!.find(
-      (field) => field.name.value === fieldName
-    );
+  const fieldNode = object.fields!.find(
+    (objectField) => objectField.name.value === countField
+  );
 
-    if (!fieldNode) {
-      throw new Error(`${fieldName} is not a field in ${object.name.value}`);
-    }
+  if (!fieldNode) {
+    throw new Error(`${countField} is not a field in ${object.name.value}`);
+  }
 
-    // if (fieldNode.type) {
-    //   throw new Error(
-    //     `All fields provided to @${directiveName} must be scalar or enum fields.`
-    //   );
-    // }
+  return fieldNode;
+}
 
-    return fieldNode;
-  });
+export function getCountTableType(
+  config: FieldCountDirectiveConfiguration,
+  ctx: TransformerContextProvider
+) {
+  const { field } = config;
+  const countFieldTypeName = getBaseType(field.type);
+  const countFieldType = ctx.inputDocument.definitions.find(
+    (d: any) =>
+      d.kind === Kind.OBJECT_TYPE_DEFINITION &&
+      d.name.value === countFieldTypeName
+  ) as ObjectTypeDefinitionNode | undefined;
+
+  if (!countFieldType) {
+    throw Error(`Unknown type name on field directive`);
+  }
+
+  return countFieldType;
 }
