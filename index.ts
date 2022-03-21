@@ -1,8 +1,5 @@
 import {
   DirectiveWrapper,
-  IAM_AUTH_ROLE_PARAMETER,
-  IAM_UNAUTH_ROLE_PARAMETER,
-  MappingTemplate,
   TransformerNestedStack,
   TransformerPluginBase,
 } from "@aws-amplify/graphql-transformer-core";
@@ -13,10 +10,8 @@ import {
   TransformerTransformSchemaStepContextProvider,
 } from "@aws-amplify/graphql-transformer-interfaces";
 import * as appsync from "@aws-cdk/aws-appsync";
-import { AuthorizationType } from "@aws-cdk/aws-appsync";
 import * as iam from "@aws-cdk/aws-iam";
 import * as lambda from "@aws-cdk/aws-lambda";
-import * as cdk from "@aws-cdk/core";
 import {
   DirectiveNode,
   FieldDefinitionNode,
@@ -28,13 +23,6 @@ import {
   ObjectTypeDefinitionNode,
   TypeNode,
 } from "graphql";
-import {
-  compoundExpression,
-  Expression,
-  obj,
-  printBlock,
-  qref,
-} from "graphql-mapping-template";
 import {
   getBaseType,
   makeField,
@@ -216,10 +204,6 @@ export default class CountTransformer
       const table = tableDataSource.ds
         .dynamoDbConfig as appsync.CfnDataSource.DynamoDBConfigProperty;
 
-      const dataSource = ctx.api.host.getDataSource(
-        `${countObject.name.value}Table`
-      );
-
       // Allow the lambda to access this table
       funcRole.addToPolicy(
         new iam.PolicyStatement({
@@ -238,60 +222,38 @@ export default class CountTransformer
       );
       let resolver = createdResources.get(resolverId);
 
-      const requestTemplate: Array<Expression> = [
-        qref(`$ctx.stash.put("typeName", "${config.resolverTypeName}")`),
-        qref(`$ctx.stash.put("fieldName", "${config.countField}")`),
-      ];
-
-      const authModes = [
-        ctx.authConfig.defaultAuthentication,
-        ...(ctx.authConfig.additionalAuthenticationProviders || []),
-      ].map((mode) => mode?.authenticationType);
-      if (authModes.includes(AuthorizationType.IAM)) {
-        const authRoleParameter = (
-          ctx.stackManager.getParameter(
-            IAM_AUTH_ROLE_PARAMETER
-          ) as cdk.CfnParameter
-        ).valueAsString;
-        const unauthRoleParameter = (
-          ctx.stackManager.getParameter(
-            IAM_UNAUTH_ROLE_PARAMETER
-          ) as cdk.CfnParameter
-        ).valueAsString;
-        requestTemplate.push(
-          qref(
-            `$ctx.stash.put("authRole", "arn:aws:sts::${
-              cdk.Stack.of(ctx.stackManager.rootStack).account
-            }:assumed-role/${authRoleParameter}/CognitoIdentityCredentials")`
-          ),
-          qref(
-            `$ctx.stash.put("unauthRole", "arn:aws:sts::${
-              cdk.Stack.of(ctx.stackManager.rootStack).account
-            }:assumed-role/${unauthRoleParameter}/CognitoIdentityCredentials")`
-          )
-        );
-      }
-      requestTemplate.push(obj({}));
-
       if (resolver === undefined) {
         // TODO: update function to use resolver manager
-        resolver = ctx.api.host.addResolver(
-          config.resolverTypeName,
-          config.countField,
-          MappingTemplate.inlineTemplateFromString(
-            printBlock("Stash resolver specific context.")(
-              compoundExpression(requestTemplate)
-            )
-          ),
-          MappingTemplate.s3MappingTemplateFromString(
-            "$util.toJson($ctx.prev.result)",
-            `${config.resolverTypeName}.${config.countField}.res.vtl`
-          ),
-          undefined,
-          undefined,
-          [],
-          stack
+        resolver = new appsync.CfnResolver(
+          stack,
+          `${field.name.value}${object.name.value}CountResolver`,
+          {
+            apiId: ctx.api.apiId,
+            fieldName: config.countField,
+            typeName: config.resolverTypeName,
+            kind: "UNIT",
+            requestMappingTemplate: `
+$util.toJson({
+  "version": "2018-05-29",
+  "operation": "Invoke",
+  "payload": {
+      "context": $ctx,
+      "dynamo": $util.parseJson($util.transform.toDynamoDBFilterExpression($ctx.arguments.filter)),
+      "tableName": "${table.tableName}"
+  }
+})
+                `,
+            responseMappingTemplate: `
+#if( $ctx.error )
+    $util.error($ctx.error.message, $ctx.error.type)
+#else
+    $util.toJson($ctx.result)
+    ${config.resolverTypeName}.${config.countField}.res.vtl
+#end
+`,
+          }
         );
+
         createdResources.set(resolverId, resolver);
       }
 
