@@ -59,6 +59,7 @@ type Foo @count @model {
     int_field: Int
     float_field: Float
     bool_field: Boolean
+    bar_id: ID @index(name: "byBar")
 }
 
 type Bar @count @model {
@@ -68,7 +69,7 @@ type Bar @count @model {
     float_field: Float
     bool_field: Boolean
     foos_count: Int
-    foos: [Foo] @count(field: "foos_count") @hasMany
+    foos: [Foo] @count(field: "foos_count", indexName: "byBar") @hasMany(indexName: "byBar", fields: ["id"])
 }`;
 
 const makeTransformer = () =>
@@ -87,6 +88,7 @@ type Foo @count @model {
     int_field: Int
     float_field: Float
     bool_field: Boolean
+    bar_id: ID @index(name: "byBar")
 }
 
 type Bar @count {
@@ -96,7 +98,7 @@ type Bar @count {
     float_field: Float
     bool_field: Boolean
     foos_count: Int
-    foos: [Foo] @count(field: "foos_count") @hasMany
+    foos: [Foo] @count(field: "foos_count", indexName: "byBar") @hasMany(indexName: "byBar", fields: ["id"])
 }
         `);
     }).toThrow(/model/);
@@ -106,6 +108,15 @@ type Bar @count {
     const transformer = makeTransformer();
     expect(() => {
       transformer.transform(`
+type Foo @count @model {
+    id: ID!
+    string_field: String
+    int_field: Int
+    float_field: Float
+    bool_field: Boolean
+    bar_id: ID @index(name: "byBar")
+}
+
 type Bar @count {
     id: ID!
     string_field: String
@@ -113,7 +124,7 @@ type Bar @count {
     float_field: Float
     bool_field: Boolean
     foos_count: Int
-    foos: [Foo] @count(field: "foos_count")
+    foos: [Foo] @count(field: "foos_count", indexName: "byBar")
 }
         `);
     }).toThrow(/model/);
@@ -181,6 +192,31 @@ function makeAppSyncEvent(dynamoFilter: DynamoFilter): CountResolverEvent {
     },
     dynamo: dynamoFilter,
     tableName: "Foo-k36yt433bvewbbo5436kmt4ixa-countdev",
+    indexName: undefined,
+  };
+}
+
+function makeAppSyncEventWithIndex(
+  dynamoFilter: DynamoFilter
+): CountResolverEvent {
+  return {
+    context: {
+      arguments: {
+        filter: {},
+      },
+      identity: null,
+      source: null,
+      result: null,
+      request: { headers: [], domainName: null },
+      info: { fieldName: "countFoo", parentTypeName: "Query", variables: {} },
+      error: null,
+      prev: null,
+      stash: {},
+      outErrors: [],
+    },
+    dynamo: dynamoFilter,
+    tableName: "Foo-k36yt433bvewbbo5436kmt4ixa-countdev",
+    indexName: undefined,
   };
 }
 
